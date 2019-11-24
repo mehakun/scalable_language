@@ -7,15 +7,12 @@ import com.github.mehakun.math.Calculator.InputArrays
 import com.github.mehakun.math.Storage.StorageError
 import io.chrisdavenport.fuuid.http4s.FUUIDVar
 import io.chrisdavenport.fuuid.FUUID
-import io.circe._
 import io.circe.syntax._
 import org.http4s.circe._
-import org.http4s.{EntityDecoder, HttpRoutes, QueryParamDecoder}
+import org.http4s.{EntityDecoder, HttpRoutes, QueryParamDecoder, Response}
 import org.http4s.dsl.Http4sDsl
 
 object MathRoutes {
-  private val NOT_FOUND_BODY = "{\"error_code\": \"not_found\"}"
-  private val BAD_REQUEST_BODY = "{\"error_code\": \"bad_request\"}"
 
   def jobWriteStateRoutes[F[_]: Sync: Applicative](
     calculator: Calculator[F]
@@ -46,16 +43,6 @@ object MathRoutes {
     final object OperationQueryParamMatcher
         extends QueryParamDecoderMatcher[Option[Calculator.Operator]]("op")
 
-    implicit val decoder: EntityDecoder[F, InputArrays] =
-      jsonOf[F, Calculator.InputArrays]
-
-    def createIdJson(id: FUUID): Json = {
-      import io.chrisdavenport.fuuid.circe._
-
-      Json
-        .fromFields(List(("id", id.asJson)))
-    }
-
     def collectQueries(
       lvlOpt: Option[Int],
       opOpt: Option[Calculator.Operator]
@@ -64,6 +51,9 @@ object MathRoutes {
         lvl <- lvlOpt
         op <- opOpt
       } yield (lvl, op)
+
+    implicit val decoder: EntityDecoder[F, InputArrays] =
+      jsonOf[F, Calculator.InputArrays]
 
     HttpRoutes.of[F] {
       case req @ POST -> Root / "jobs" :? ParallelLevelQueryParamMatcher(level) +& OperationQueryParamMatcher(
@@ -76,9 +66,9 @@ object MathRoutes {
               case (validatedLevel, validatedOp) =>
                 calculator
                   .calculate(input, validatedOp, validatedLevel)
-                  .flatMap((a: FUUID) => Ok(createIdJson(a)))
+                  .flatMap((a: FUUID) => Ok(Protocol.createIdJson(a)))
             }
-            .getOrElse(BadRequest(BAD_REQUEST_BODY))
+            .getOrElse(BadRequest(Protocol.BAD_REQUEST_BODY))
         } yield resp
     }
   }
@@ -89,17 +79,13 @@ object MathRoutes {
     val dsl = new Http4sDsl[F] {}
     import dsl._
 
-    def createStatusJson(status: String): Json =
-      Json
-        .fromFields(List(("status", Json.fromString(status))))
-
     HttpRoutes.of[F] {
       case GET -> Root / "jobs" / FUUIDVar(id) =>
         calculator
           .getResult(id)
           .toOption
           .map(s => Ok(s.asJson.noSpaces))
-          .getOrElse(NotFound(NOT_FOUND_BODY))
+          .getOrElse(NotFound(Protocol.NOT_FOUND_BODY))
           .flatten
 
       case GET -> Root / "jobs" / FUUIDVar(id) / "status" =>
@@ -109,22 +95,20 @@ object MathRoutes {
             {
               case StorageError.KeyNotFound => Option.empty[String]
               case StorageError.ValueNotFound =>
-                Option(createStatusJson("PENDING").noSpaces)
+                Option(Protocol.createStatusJson("PENDING").noSpaces)
             },
-            _ => Option(createStatusJson("COMPLETED").noSpaces)
+            _ => Option(Protocol.createStatusJson("COMPLETED").noSpaces)
           )
           .flatMap {
             case Some(s) => Ok(s)
-            case None    => NotFound(NOT_FOUND_BODY)
+            case None    => NotFound(Protocol.NOT_FOUND_BODY)
           }
     }
   }
 
-  def badRequestRoute[F[_]: Sync]: HttpRoutes[F] = {
+  def createBadRequestResponse[F[_]: Applicative]: F[Response[F]] = {
     val dsl = new Http4sDsl[F] {}
     import dsl._
-    HttpRoutes.of[F] {
-      case _ => BadRequest(BAD_REQUEST_BODY)
-    }
+    BadRequest(Protocol.BAD_REQUEST_BODY)
   }
 }

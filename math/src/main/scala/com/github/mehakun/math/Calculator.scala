@@ -1,8 +1,8 @@
 package com.github.mehakun.math
 
 import cats.data.EitherT
-import cats.effect.{Async, Concurrent, Fiber, IO, Sync}
-import cats.{Functor, Monad}
+import cats.effect.{Async, Concurrent, Sync}
+import cats.Monad
 import cats.implicits._
 import io.chrisdavenport.fuuid.FUUID
 import fs2.Stream
@@ -28,7 +28,7 @@ object Calculator {
 
   def apply[F[_]](implicit ev: Calculator[F]): Calculator[F] = ev
 
-  def simpleCalculator[F[_]: Functor: Sync: Monad: Concurrent: Async](
+  def simpleCalculator[F[_]: Sync: Monad: Concurrent: Async](
     storage: Storage[F]
   ): Calculator[F] =
     new Calculator[F] {
@@ -48,7 +48,7 @@ object Calculator {
         for {
           id <- FUUID.randomFUUID[F]
           _ <- storage.store(id, None)
-          comp: Fiber[F, Unit] <- Concurrent[F].start(
+          _ <- Concurrent[F].start(
             Sync[F]
               .delay {
                 reduceInput(input, operator, concurrencyLevel)

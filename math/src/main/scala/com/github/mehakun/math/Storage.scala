@@ -1,6 +1,6 @@
 package com.github.mehakun.math
 
-import cats.{Applicative}
+import cats.Applicative
 import cats.data.EitherT
 import cats.implicits._
 import io.chrisdavenport.fuuid.FUUID
